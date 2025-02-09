@@ -3,7 +3,7 @@
  * Plugin Name: Active Users Tracker
  * Plugin URI: https://github.com/aelph/active-users-tracker
  * Description: Отслеживание и отображение активных пользователей WordPress
- * Version: 1.0.0
+ * Version: 1.2.0
  * Author: Alex Elph
  * Text Domain: active-users-tracker
  * Domain Path: /languages
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Определяем константы плагина
-define('AUT_VERSION', '1.0.0');
+define('AUT_VERSION', '1.2.0');
 define('AUT_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('AUT_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -170,28 +170,74 @@ function track_admin_activity() {
     }
 }
 
-// Добавляем страницу в админку
-function add_active_users_menu() {
-    // Проверяем, является ли пользователь администратором
-    if (!current_user_can('administrator')) {
-        return;
+// Функция для получения разрешенных ролей
+function get_allowed_roles() {
+    $allowed_roles = get_option('aut_allowed_roles', ['administrator']);
+    return is_array($allowed_roles) ? $allowed_roles : ['administrator'];
+}
+
+// Проверка доступа пользователя
+function user_can_view_active_users() {
+    if (!is_user_logged_in()) {
+        return false;
     }
 
+    // Администраторы всегда имеют доступ
+    if (current_user_can('administrator')) {
+        return true;
+    }
+
+    $user = wp_get_current_user();
+    $allowed_roles = get_allowed_roles();
+
+    // Проверяем, есть ли у пользователя хотя бы одна из разрешенных ролей
+    foreach ($user->roles as $role) {
+        if (in_array($role, $allowed_roles)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Добавляем страницу в админку
+function add_active_users_menu() {
+    // Получаем позицию меню из настроек
+    $menu_position = get_option('aut_menu_position', 2);
+
+    // Добавляем основную страницу
     add_menu_page(
         'Активные пользователи',      // Заголовок страницы
         'Активные пользователи',      // Текст меню
-        'manage_options',             // Права доступа (только администраторы)
+        'read',                       // Базовые права (чтение)
         'active-users',               // Слаг страницы
-        'display_active_users_page',  // Функция для отображения содержимого
-        'dashicons-groups',           // Иконка меню
-        999                          // Позиция в меню
+        'display_active_users_page',  // Функция отображения
+        'dashicons-groups',           // Иконка
+        intval($menu_position)        // Позиция
     );
+
+    // Добавляем подстраницу настроек (только для администраторов)
+    if (current_user_can('administrator')) {
+        add_submenu_page(
+            'active-users',              // Родительский слаг
+            'Настройки отображения для ролей',  // Заголовок страницы
+            'Настройки',                 // Текст меню
+            'manage_options',            // Права доступа
+            'active-users-settings',     // Слаг
+            'display_settings_page'      // Функция отображения
+        );
+    }
+
+    // Скрываем меню для неразрешенных пользователей
+    if (!user_can_view_active_users()) {
+        remove_menu_page('active-users');
+    }
 }
 
 // Функция для отображения страницы в админке
 function display_active_users_page() {
     // Проверка прав доступа
-    if (!current_user_can('manage_options')) {
+    if (!user_can_view_active_users()) {
         wp_die('У вас нет прав для просмотра этой страницы.');
     }
     
@@ -280,9 +326,102 @@ function aut_init() {
     add_action('wp_login', 'track_user_login');
     add_action('save_post', 'track_post_activity', 10, 3);
     add_action('post_updated', 'track_post_activity', 10, 3);
-    add_action('comment_post', 'track_comment_activity');
+    add_action('wp_insert_comment', 'track_comment_activity');
     add_action('admin_init', 'track_admin_activity');
     add_action('admin_menu', 'add_active_users_menu');
+    
+    // Добавляем ссылку на настройки в список плагинов
+    $plugin_file = plugin_basename(__FILE__);
+    add_filter("plugin_action_links_$plugin_file", 'aut_add_settings_link');
+}
+
+// Функция отображения страницы настроек
+function display_settings_page() {
+    if (!current_user_can('administrator')) {
+        wp_die('У вас нет прав для просмотра этой страницы.');
+    }
+
+    // Сохранение настроек
+    if (isset($_POST['aut_save_settings']) && check_admin_referer('aut_settings_nonce')) {
+        // Сохраняем разрешенные роли
+        $allowed_roles = isset($_POST['aut_allowed_roles']) ? (array)$_POST['aut_allowed_roles'] : [];
+        
+        // Всегда добавляем администратора в список
+        if (!in_array('administrator', $allowed_roles)) {
+            $allowed_roles[] = 'administrator';
+        }
+        update_option('aut_allowed_roles', $allowed_roles);
+
+        // Сохраняем позицию меню
+        $old_position = get_option('aut_menu_position', 2);
+        $menu_position = isset($_POST['aut_menu_position']) ? intval($_POST['aut_menu_position']) : 2;
+        update_option('aut_menu_position', $menu_position);
+
+        // Если позиция изменилась, перезагружаем страницу
+        if ($old_position != $menu_position) {
+            echo '<div class="notice notice-success"><p>Настройки сохранены. Страница будет перезагружена...</p></div>';
+            echo '<script>setTimeout(function() { window.location.reload(); }, 1000);</script>';
+        } else {
+            echo '<div class="notice notice-success"><p>Настройки сохранены.</p></div>';
+        }
+    }
+
+    // Получаем все роли WordPress
+    $wp_roles = wp_roles();
+    $all_roles = $wp_roles->roles;
+    $allowed_roles = get_allowed_roles();
+
+    // Выводим форму настроек
+    ?>
+    <div class="wrap">
+        <h1>Настройки Active Users Tracker</h1>
+        <form method="post" action="">
+            <?php wp_nonce_field('aut_settings_nonce'); ?>
+            <table class="form-table">
+                <tr>
+                    <th scope="row">Роли, которым разрешён просмотр</th>
+                    <td>
+                        <p class="description">Выберите роли, которым будет доступна страница активных пользователей.<br>Администраторы всегда имеют доступ.</p></br>
+                        <?php foreach ($all_roles as $role_id => $role) : ?>
+                            <label style="display: block; margin-bottom: 10px;">
+                                <input type="checkbox" 
+                                       name="aut_allowed_roles[]" 
+                                       value="<?php echo esc_attr($role_id); ?>" 
+                                       <?php checked($role_id === 'administrator' ? true : in_array($role_id, $allowed_roles)); ?>
+                                       <?php disabled($role_id === 'administrator'); ?>
+                                >
+                                <?php echo esc_html($role['name']); ?>
+                            </label>
+                        <?php endforeach; ?>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">Позиция в меню</th>
+                    <td>
+                        <p class="description">Укажите позицию меню в админ-панели (1-999). Чем меньше число, тем выше будет расположен пункт меню.</p></br>
+                        <input type="number" 
+                               name="aut_menu_position" 
+                               value="<?php echo esc_attr(get_option('aut_menu_position', 2)); ?>" 
+                               min="1" 
+                               max="999"
+                               step="1"
+                        >
+                    </td>
+                </tr>
+            </table>
+            <p class="submit">
+                <input type="submit" name="aut_save_settings" class="button button-primary" value="Сохранить настройки">
+            </p>
+        </form>
+    </div>
+    <?php
+}
+
+// Добавляем ссылку на настройки в список плагинов
+function aut_add_settings_link($links) {
+    $settings_link = '<a href="' . admin_url('admin.php?page=active-users-settings') . '">' . __('Настройки', 'active-users-tracker') . '</a>';
+    array_unshift($links, $settings_link);
+    return $links;
 }
 
 // Инициализация плагина
@@ -296,5 +435,15 @@ function aut_activate() {
     $css_dir = AUT_PLUGIN_DIR . 'css';
     if (!file_exists($css_dir)) {
         wp_mkdir_p($css_dir);
+    }
+
+    // Устанавливаем начальные настройки
+    if (!get_option('aut_allowed_roles')) {
+        update_option('aut_allowed_roles', ['administrator']);
+    }
+
+    // Устанавливаем начальную позицию меню
+    if (!get_option('aut_menu_position')) {
+        update_option('aut_menu_position', 2);
     }
 }
