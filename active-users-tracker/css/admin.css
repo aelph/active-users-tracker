@@ -1,0 +1,77 @@
+.active-users-wrap {
+    margin: 20px;
+}
+
+.active-users-section {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 20px;
+}
+
+.user-card {
+    display: flex;
+    background: #fff;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.user-card .avatar {
+    margin-right: 15px;
+    border-radius: 50%;
+}
+
+.user-info {
+    flex: 1;
+}
+
+.user-info > div {
+    margin-bottom: 5px;
+}
+
+.user-name {
+    font-size: 16px;
+    font-weight: bold;
+    color: #23282d;
+}
+
+.user-id,
+.user-email,
+.user-activity,
+.user-registered {
+    color: #666;
+    font-size: 13px;
+}
+
+/* Стили для таблицы всех пользователей */
+.all-users-section {
+    margin-top: 40px;
+}
+
+.all-users-section h2 {
+    margin-bottom: 20px;
+}
+
+.all-users-section table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.all-users-section th {
+    text-align: left;
+    padding: 10px;
+}
+
+.all-users-section td {
+    padding: 10px;
+    vertical-align: middle;
+}
+
+.description {
+    color: #666;
+    font-style: italic;
+    margin: 5px 0 15px;
+}
