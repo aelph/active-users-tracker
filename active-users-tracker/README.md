@@ -1,5 +1,5 @@
 ---
-=== Active Users Tracker === 
+Plugin Name: Active Users Tracker 
 Contributors: (Alex Elph) 
 Tags: users, activity, tracking 
 Requires at least: 6.0 
